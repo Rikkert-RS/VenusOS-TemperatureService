@@ -1,23 +1,19 @@
 #!/bin/bash
 
+#### add the following lines to the package's setup script
+
+#### following line incorporates helper resources into this script
+source "/data/SetupHelper/HelperResources/IncludeHelpers"
+#### end of lines to include helper resources
 # install  TemperatureService for Victron Venus OS on Raspberry Pi
 
 overlayFile="/u-boot/overlays/w1-gpio.dtbo"
 configFile="/u-boot/config.txt"
 
-#
 
 packageLogFile="/var/log/VenusOS-TemperatureService/current"
 
-#### following lines incorporate SetupHelper utilities into this script
-# Refer to the SetupHelper ReadMe file for details.
-    
-# CommonResources sets $okToProceed and $reinstall
-# among other varables and functions useful to this script
 
-source "/data/SetupHelper/CommonResources"
-
-#### end of lines to include SetupHelper
 
 
 #### running manually and OK to proceed - prompt for input
