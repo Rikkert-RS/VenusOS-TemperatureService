@@ -164,7 +164,7 @@ def update_W1():
             logging.debug("1Wire Family ID:" + familyID + " Full DevicesID:" + id)
             
             #DS18B20 Temp Sensors
-            if familyID == '28':
+            if familyID in ('28','10'):
                 if ('W1-temp:'+ id) not in dbusservice:
                     logging.info("1Wire Sensor found with no Service -> Create:")
                                     
