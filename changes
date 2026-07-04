@@ -1,5 +1,7 @@
 v0.55:
 	Added support for Raspi5
+v0.54:
+	Update dbus-i2c.py to allow multiple GPIO pins for 1-Wire sensors #PR25 from @morphias2004 thanks
 v0.53:
 	Fixed install issue with Update Setup for SetupHelper HelperResources
 v0.52:
