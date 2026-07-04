@@ -147,84 +147,109 @@ def update_rpi():
         dbusservice['cpu-temp']['/Temperature'] = value 
         fd.close
 
-import os
-import logging
-
 # Update W1 temp
 def update_W1():
+    # Find all available 1-Wire bus masters once per update cycle
+    try:
+        masters = [
+            os.path.join('/sys/devices', master)
+            for master in os.listdir('/sys/devices')
+            if master.startswith('w1_bus_master')
+        ]
+    except OSError as e:
+        logging.warning("Unable to enumerate 1-Wire bus masters: %s", e)
+        return
+
     # Loop through all available w1_bus_master directories
-    for master in os.listdir('/sys/devices/'):
-        if master.startswith('w1_bus_master'):
-            master_path = os.path.join('/sys/devices', master)
-            
-            # Check if the master has slaves
-            if os.path.isfile(os.path.join(master_path, 'w1_master_slaves')):
-                with open(os.path.join(master_path, 'w1_master_slaves'), 'r') as fd:
-                    w1Slaves = fd.read().splitlines()
+    for master_path in masters:
 
-                # Loop through all connected 1Wire devices and create dbusService if necessary
-                for id in w1Slaves:
-                    familyID = id[0:2]
-                    deviceID = id[3:]
-                    logging.debug("1Wire Family ID:" + familyID + " Full Device ID:" + id)
-                    
-                    # DS18B20 Temp Sensors
-                    if familyID == '28':
-                        if ('W1-temp:' + id) not in dbusservice:
-                            logging.info("1Wire Sensor found with no Service -> Create:")
-                            
-                            dbusservice['W1-temp:' + id] = new_service(
-                                base, 'temperature', 'Wire', '1Wire', SCount + 1, 100 + SCount, deviceID)
-                            dbusservice['W1-temp:' + id]['/ProductName'] = '1Wire Sensor ' + id
-                            dbusservice['W1-temp:' + id]['/HardwareVersion'] = deviceID
-                            dbusservice['W1-temp:' + id]['/FirmwareVersion'] = familyID
-                            initSettings(newSettings)
-                            readSettings(settingObjects)
-                            logging.info("Created Service 1Wire ID: " + str(SCount) + " Settings ID:" + str(SCount))
+        # Check if the master has slaves
+        slaves_file = os.path.join(master_path, 'w1_master_slaves')
+        if not os.path.isfile(slaves_file):
+            continue
 
-                        # Read Temp value
-                        value = None  # invalidate value
-                        temp_path = os.path.join(master_path, id, 'temperature')
-                        
-                        if os.path.exists(temp_path):
-                            with open(temp_path, 'r') as fd:
-                                lines = fd.read().splitlines()
-                                if lines:
-                                    logging.debug("RawValue ID" + id + ":" + lines[0])
-                                    if lines[0].strip('-').isnumeric():
-                                        value = float(lines[0])
-                                        value = round(value / 1000.0, 1)
+        with open(slaves_file, 'r') as fd:
+            w1Slaves = fd.read().splitlines()
 
-                        dbusservice['W1-temp:' + id]['/Temperature'] = value
+        # Loop through all connected 1Wire devices and create dbusService if necessary
+        for id in w1Slaves:
+            familyID = id[0:2]
+            deviceID = id[3:]
+            logging.debug("1Wire Family ID:" + familyID + " Full Device ID:" + id)
 
-    # Check 1 Wire Service Connection
+            # DS18B20 Temperature Sensors
+            if familyID in ('28','10'):
+                service = 'W1-temp:' + id
+
+                if service not in dbusservice:
+                    logging.info("1Wire Sensor found with no Service -> Create:")
+
+                    dbusservice[service] = new_service(
+                        base,
+                        'temperature',
+                        'Wire',
+                        '1Wire',
+                        SCount + 1,
+                        100 + SCount,
+                        deviceID
+                    )
+
+                    dbusservice[service]['/ProductName'] = '1Wire Sensor ' + id
+                    dbusservice[service]['/HardwareVersion'] = deviceID
+                    dbusservice[service]['/FirmwareVersion'] = familyID
+
+                    initSettings(newSettings)
+                    readSettings(settingObjects)
+
+                    logging.info(
+                        "Created Service 1Wire ID: %s Settings ID:%s",
+                        SCount,
+                        SCount
+                    )
+
+                # Read temperature
+                value = None
+                temp_path = os.path.join(master_path, id, 'temperature')
+
+                if os.path.isfile(temp_path):
+                    with open(temp_path, 'r') as fd:
+                        lines = fd.read().splitlines()
+
+                    if lines:
+                        logging.debug("RawValue ID%s:%s", id, lines[0])
+
+                        if lines[0].strip('-').isnumeric():
+                            value = round(float(lines[0]) / 1000.0, 1)
+
+                dbusservice[service]['/Temperature'] = value
+
+    # Check 1-Wire service connection
     for item in dbusservice:
-        logging.debug("Search for 1Wire Service Current Service: " + item)
-        if dbusservice[item]['/Mgmt/Connection'] == '1Wire':
-            logging.debug("Found 1 Wire Service Check connection")
-            device_id = item[8:]  # Device ID is after "W1-temp:"
-            
-            # Check if the device still exists in any of the 1-Wire bus masters
-            device_exists = False
-            for master in os.listdir('/sys/devices/'):
-                if master.startswith('w1_bus_master'):
-                    master_path = os.path.join('/sys/devices', master)
-                    if os.path.exists(os.path.join(master_path, device_id)):
-                        device_exists = True
-                        break
+        logging.debug("Search for 1Wire Service Current Service: %s", item)
 
-            # Update connection status if the device is disconnected
-            if not device_exists:
-                if dbusservice[item]['/Connected'] != 0:
-                    logging.info(item + " temperature interface disconnected")
-                    dbusservice[item]['/Connected'] = 0
-                    dbusservice[item]['/Status'] = 1
-                    dbusservice[item]['/Temperature'] = None
-            else:
-                if dbusservice[item]['/Connected'] != 1:
-                    logging.info(item + " temperature interface connected")
-                    dbusservice[item]['/Connected'] = 1
-                    dbusservice[item]['/Status'] = 0
+        if dbusservice[item]['/Mgmt/Connection'] != '1Wire':
+            continue
+
+        logging.debug("Found 1Wire Service Check connection")
+
+        device_id = item[8:]
+
+        device_exists = any(
+            os.path.exists(os.path.join(master_path, device_id))
+            for master_path in masters
+        )
+
+        if not device_exists:
+            if dbusservice[item]['/Connected'] != 0:
+                logging.info("%s temperature interface disconnected", item)
+                dbusservice[item]['/Connected'] = 0
+                dbusservice[item]['/Status'] = 1
+                dbusservice[item]['/Temperature'] = None
+        else:
+            if dbusservice[item]['/Connected'] != 1:
+                logging.info("%s temperature interface connected", item)
+                dbusservice[item]['/Connected'] = 1
+                dbusservice[item]['/Status'] = 0
  
 
 # =========================== Start of settings interface ================
