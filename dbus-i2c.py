@@ -306,7 +306,7 @@ def initSettings(newSettings):
 
 #   settingsDevice is the library class that handles the reading and setting of persistent settings
     settings = SettingsDevice(
-        bus=dbus.SystemBus() if (platform.machine() == 'armv7l') else dbus.SessionBus(),
+        bus=dbus.SystemBus() if (platform.machine() == 'armv7l', 'aarch64', 'arm64') else dbus.SessionBus(),
         supportedSettings = newSettings,
         eventCallback     = handle_changed_setting)
 
